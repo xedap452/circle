@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const colors = require('colors');
+const { DateTime } = require('luxon');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
 class TonCircle {
@@ -21,15 +22,7 @@ class TonCircle {
             "Sec-Fetch-Site": "same-site",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
         };
-        this.proxies = this.loadProxies();
-    }
-
-    loadProxies() {
-        const proxyFile = path.join(__dirname, 'proxy.txt');
-        return fs.readFileSync(proxyFile, 'utf8')
-            .replace(/\r/g, '')
-            .split('\n')
-            .filter(Boolean);
+        this.proxies = fs.readFileSync('proxy.txt', 'utf8').split('\n').filter(Boolean);
     }
 
     log(msg, type = 'info') {
@@ -76,16 +69,19 @@ class TonCircle {
         }
     }
 
-    async makeRequest(url, method, data, headers, proxy) {
-        const proxyAgent = new HttpsProxyAgent(proxy);
+    async makeRequest(url, method, data = null, headers = {}, proxy = null) {
+        const config = {
+            method,
+            url,
+            headers: { ...this.headers, ...headers },
+            ...(data && { data }),
+        };
+
+        if (proxy) {
+            config.httpsAgent = new HttpsProxyAgent(proxy);
+        }
+
         try {
-            const config = {
-                method,
-                url,
-                headers,
-                httpsAgent: proxyAgent,
-                ...(data && { data })
-            };
             const response = await axios(config);
             return { success: true, data: response.data };
         } catch (error) {
@@ -95,19 +91,19 @@ class TonCircle {
 
     async login(authorization, proxy) {
         const url = `https://api.toncircle.org/user/login?c=${Date.now()}`;
-        const headers = { ...this.headers, "Authorization": authorization };
+        const headers = { "Authorization": authorization };
         return this.makeRequest(url, 'post', {}, headers, proxy);
     }
 
     async getProfile(authorization, proxy) {
         const url = `https://api.toncircle.org/user/profile?c=${Date.now()}`;
-        const headers = { ...this.headers, "Authorization": authorization };
+        const headers = { "Authorization": authorization };
         return this.makeRequest(url, 'get', null, headers, proxy);
     }
 
     async claimDailyBonus(authorization, proxy) {
         const url = `https://api.toncircle.org/user/bonus/daily?c=${Date.now()}`;
-        const headers = { ...this.headers, "Authorization": authorization };
+        const headers = { "Authorization": authorization };
         const payload = { withMultiplier: false };
         return this.makeRequest(url, 'post', payload, headers, proxy);
     }
@@ -127,7 +123,7 @@ class TonCircle {
             default:
                 throw new Error('Invalid task type');
         }
-        const headers = { ...this.headers, "Authorization": authorization };
+        const headers = { "Authorization": authorization };
         return this.makeRequest(url, 'get', null, headers, proxy);
     }
 
@@ -146,7 +142,7 @@ class TonCircle {
             default:
                 throw new Error('Invalid task type');
         }
-        const headers = { ...this.headers, "Authorization": authorization };
+        const headers = { "Authorization": authorization };
         const payload = { id: taskId };
         return this.makeRequest(url, 'post', payload, headers, proxy);
     }
@@ -166,7 +162,7 @@ class TonCircle {
             default:
                 throw new Error('Invalid task type');
         }
-        const headers = { ...this.headers, "Authorization": authorization };
+        const headers = { "Authorization": authorization };
         const payload = { id: taskId };
         return this.makeRequest(url, 'post', payload, headers, proxy);
     }
@@ -196,9 +192,108 @@ class TonCircle {
 
     async spin(authorization, bet, chance, proxy) {
         const url = `https://api.toncircle.org/user/games/upgrade/spin?c=${Date.now()}`;
-        const headers = { ...this.headers, "Authorization": authorization };
+        const headers = { "Authorization": authorization };
         const payload = { bet, chance };
         return this.makeRequest(url, 'post', payload, headers, proxy);
+    }
+
+    async getAd(tg_id, proxy) {
+        const url = `https://api.adsgram.ai/adv?blockId=3852&tg_id=${tg_id}&tg_platform=android&platform=Win32&language=vi`;
+        const headers = {
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",
+            "Cache-Control": "max-age=0",
+            "Connection": "keep-alive",
+            "Host": "api.adsgram.ai",
+            "Origin": "https://bot.toncircle.org",
+            "Referer": "https://bot.toncircle.org/",
+            "Sec-Ch-Ua": '"Not/A)Brand";v="99", "Google Chrome";v="115", "Chromium";v="115"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "cross-site",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        };
+    
+        const config = {
+            method: 'get',
+            url,
+            headers,
+            httpsAgent: proxy ? new HttpsProxyAgent(proxy) : undefined
+        };
+    
+        try {
+            const response = await axios(config);
+            return { success: true, data: response.data };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    async watchAd(adData, proxy) {
+        try {
+            if (!adData.banner || !adData.banner.trackings) {
+                throw new Error('Invalid ad data structure');
+            }
+
+            const renderTracking = adData.banner.trackings.find(t => t.name === 'render');
+            if (renderTracking) {
+                await this.makeRequest(renderTracking.value, 'get', null, {}, proxy);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+
+            const showTracking = adData.banner.trackings.find(t => t.name === 'show');
+            if (showTracking) {
+                await this.makeRequest(showTracking.value, 'get', null, {}, proxy);
+                await new Promise(resolve => setTimeout(resolve, 14000));
+            }
+
+            const rewardTracking = adData.banner.trackings.find(t => t.name === 'reward');
+            if (rewardTracking) {
+                await this.makeRequest(rewardTracking.value, 'get', null, {}, proxy);
+            }
+
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    async processAdWatching(authorization, tg_id, proxy) {
+        const profileResult = await this.getProfile(authorization, proxy);
+        if (profileResult.success) {
+            const adWatchTime = DateTime.fromISO(profileResult.data.adWatchTime, { zone: 'utc' }).setZone('local');
+            const now = DateTime.local();
+    
+            if (now < adWatchTime) {
+                const timeUntilNextAd = adWatchTime.diff(now).toFormat("hh:mm:ss");
+                this.log(`Thời gian xem quảng cáo tiếp theo: ${timeUntilNextAd}`, 'custom');
+            } else {
+                const adResult = await this.getAd(tg_id, proxy);
+                if (adResult.success) {
+                    this.log('Bắt đầu xem quảng cáo...', 'custom');
+                    const watchResult = await this.watchAd(adResult.data, proxy);
+                    if (watchResult.success) {
+                        this.log('Xem quảng cáo thành công!', 'success');
+                        const updatedProfileResult = await this.getProfile(authorization, proxy);
+                        if (updatedProfileResult.success) {
+                            const nextAdWatchTime = DateTime.fromISO(updatedProfileResult.data.adWatchTime, { zone: 'utc' })
+                                .setZone('local')
+                                .plus({ minutes: 2 });
+                            const timeUntilNextAd = nextAdWatchTime.diff(now).toFormat("hh:mm:ss");
+                            this.log(`Thời gian xem quảng cáo tiếp theo: ${timeUntilNextAd}`, 'custom');
+                        }
+                    } else {
+                        this.log(`Lỗi khi xem quảng cáo: ${watchResult.error}`, 'error');
+                    }
+                } else {
+                    this.log(`Không thể lấy quảng cáo: ${adResult.error}`, 'error');
+                }
+            }
+        } else {
+            this.log(`Không thể lấy thông tin tài khoản: ${profileResult.error}`, 'error');
+        }
     }
 
     async main() {
@@ -210,14 +305,14 @@ class TonCircle {
                 .filter(Boolean);
 
             for (let i = 0; i < data.length; i++) {
-                const authorization = data[i];
-                const proxy = this.proxies[i % this.proxies.length];
-                let proxyIP = 'Unknown';
+                const [authorization, tg_id] = data[i].split('|');
+                const proxy = this.proxies[i];
 
+                let proxyIP = 'Unknown';
                 try {
                     proxyIP = await this.checkProxyIP(proxy);
                 } catch (error) {
-                    this.log(`Không thể kiểm tra IP của proxy: ${error.message}`, 'warning');
+                    this.log(`Lỗi khi kiểm tra IP của proxy: ${error.message}`, 'error');
                     continue;
                 }
 
@@ -241,6 +336,8 @@ class TonCircle {
                         await this.processTasksOfType(authorization, 'regular', proxy);
                         await this.processTasksOfType(authorization, 'one-time', proxy);
                         await this.processTasksOfType(authorization, 'partner', proxy);
+
+                        await this.processAdWatching(authorization, tg_id, proxy);
 
                         const updatedProfileResult = await this.getProfile(authorization, proxy);
                         if (updatedProfileResult.success) {
@@ -267,11 +364,12 @@ class TonCircle {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
 
-            this.log('Đã xử lý xong tất cả tài khoản. Nghỉ 24 giờ trước khi tiếp tục vòng lặp.', 'warning');
-            await this.countdown(24 * 60 * 60); // số 24 là giờ
+            this.log('Đã xử lý xong tất cả tài khoản. Nghỉ 150 giây trước khi tiếp tục vòng lặp.', 'warning');
+            await this.countdown(150); 
         }
     }
 }
+
 
 const client = new TonCircle();
 client.main().catch(err => {
